@@ -64,7 +64,7 @@ struct curl_trc_featt;
 # define CURLECH_CLA_CFG    (1<<4)
 #endif
 
-#ifdef USE_WEBSOCKETS
+#ifndef CURL_DISABLE_WEBSOCKETS
 /* CURLPROTO_GOPHERS (29) is the highest publicly used protocol bit number,
  * the rest are internal information. If we use higher bits we only do this on
  * platforms that have a >= 64-bit type and then we use such a type for the
@@ -104,6 +104,12 @@ typedef unsigned int curl_prot_t;
 
 #define CURL_DEFAULT_USER "anonymous"
 #define CURL_DEFAULT_PASSWORD "ftp@example.com"
+
+#if !defined(_WIN32) && !defined(MSDOS) && !defined(__EMX__)
+/* do FTP line-end CRLF => LF conversions on platforms that prefer LF-only. It
+   also means: keep CRLF line endings on the CRLF platforms */
+#define CURL_PREFER_LF_LINEENDS
+#endif
 
 /* Convenience defines for checking protocols or their SSL based version. Each
    protocol handler should only ever have a single CURLPROTO_ in its protocol
@@ -945,7 +951,7 @@ struct connectdata {
 #ifndef CURL_DISABLE_MQTT
     struct mqtt_conn mqtt;
 #endif
-#ifdef USE_WEBSOCKETS
+#ifndef CURL_DISABLE_WEBSOCKETS
     struct websocket *ws;
 #endif
     unsigned int unused:1; /* avoids empty union */
@@ -1838,7 +1844,7 @@ struct UserDefined {
   BIT(doh_verifystatus);   /* DoH certificate status verification */
 #endif
   BIT(http09_allowed); /* allow HTTP/0.9 responses */
-#ifdef USE_WEBSOCKETS
+#ifndef CURL_DISABLE_WEBSOCKETS
   BIT(ws_raw_mode);
 #endif
 #ifdef USE_ECH
