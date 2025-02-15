@@ -461,15 +461,12 @@ static bool bad_domain(const char *domain, size_t len)
 static bool invalid_octets(const char *p)
 {
   /* Reject all bytes \x01 - \x1f (*except* \x09, TAB) + \x7f */
-  static const char badoctets[] = {
-    "\x01\x02\x03\x04\x05\x06\x07\x08\x0a"
-    "\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14"
-    "\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f"
-  };
-  size_t len;
-  /* scan for all the octets that are *not* in cookie-octet */
-  len = strcspn(p, badoctets);
-  return p[len] != '\0';
+  while(*p) {
+    if(((*p != 9) && (*p < 0x20)) || (*p == 0x7f))
+      return TRUE;
+    p++;
+  }
+  return FALSE;
 }
 
 #define CERR_OK            0
@@ -486,7 +483,9 @@ static bool invalid_octets(const char *p)
 #define CERR_COMMENT       11 /* a commented line */
 #define CERR_RANGE         12 /* expire range problem */
 #define CERR_FIELDS        13 /* incomplete netscape line */
+#ifdef USE_LIBPSL
 #define CERR_PSL           14 /* a public suffix */
+#endif
 #define CERR_LIVE_WINS     15
 
 /* The maximum length we accept a date string for the 'expire' keyword. The
@@ -879,7 +878,7 @@ parse_netscape(struct Cookie *co,
       /*
        * flag: A TRUE/FALSE value indicating if all machines within a given
        * domain can access the variable. Set TRUE when the cookie says
-       * .domain.com and to false when the domain is complete www.domain.com
+       * .example.com and to false when the domain is complete www.example.com
        */
       co->tailmatch = !!strncasecompare(ptr, "TRUE", len);
       break;

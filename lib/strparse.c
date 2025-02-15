@@ -26,10 +26,10 @@
 
 /* Get a word until the first DELIM or end of string. At least one byte long.
    return non-zero on error */
-int Curl_str_until(char **linep, struct Curl_str *out,
+int Curl_str_until(const char **linep, struct Curl_str *out,
                    const size_t max, char delim)
 {
-  char *s = *linep;
+  const char *s = *linep;
   size_t len = 0;
   DEBUGASSERT(linep && *linep && out && max && delim);
 
@@ -51,7 +51,7 @@ int Curl_str_until(char **linep, struct Curl_str *out,
 
 /* Get a word until the first space or end of string. At least one byte long.
    return non-zero on error */
-int Curl_str_word(char **linep, struct Curl_str *out,
+int Curl_str_word(const char **linep, struct Curl_str *out,
                   const size_t max)
 {
   return Curl_str_until(linep, out, max, ' ');
@@ -60,10 +60,10 @@ int Curl_str_word(char **linep, struct Curl_str *out,
 
 /* Get a "quoted" word. No escaping possible.
    return non-zero on error */
-int Curl_str_quotedword(char **linep, struct Curl_str *out,
+int Curl_str_quotedword(const char **linep, struct Curl_str *out,
                         const size_t max)
 {
-  char *s = *linep;
+  const char *s = *linep;
   size_t len = 0;
   DEBUGASSERT(linep && *linep && out && max);
 
@@ -87,7 +87,7 @@ int Curl_str_quotedword(char **linep, struct Curl_str *out,
 
 /* Advance over a single character.
    return non-zero on error */
-int Curl_str_single(char **linep, char byte)
+int Curl_str_single(const char **linep, char byte)
 {
   DEBUGASSERT(linep && *linep);
   if(**linep != byte)
@@ -98,19 +98,21 @@ int Curl_str_single(char **linep, char byte)
 
 /* Advance over a single space.
    return non-zero on error */
-int Curl_str_singlespace(char **linep)
+int Curl_str_singlespace(const char **linep)
 {
   return Curl_str_single(linep, ' ');
 }
 
 /* Get an unsigned number. Leading zeroes are accepted.
    return non-zero on error */
-int Curl_str_number(char **linep, size_t *nump, size_t max)
+int Curl_str_number(const char **linep, size_t *nump, size_t max)
 {
   size_t num = 0;
   DEBUGASSERT(linep && *linep && nump);
   *nump = 0;
-  while(ISDIGIT(**linep)) {
+  if(!ISDIGIT(**linep))
+    return STRE_NO_NUM;
+  do {
     int n = **linep - '0';
     if(num > ((SIZE_T_MAX - n) / 10))
       return STRE_OVERFLOW;
@@ -118,14 +120,14 @@ int Curl_str_number(char **linep, size_t *nump, size_t max)
     if(num > max)
       return STRE_BIG; /** too big */
     (*linep)++;
-  }
+  } while(ISDIGIT(**linep));
   *nump = num;
   return STRE_OK;
 }
 
 /* CR or LF
    return non-zero on error */
-int Curl_str_newline(char **linep)
+int Curl_str_newline(const char **linep)
 {
   DEBUGASSERT(linep && *linep);
   if(ISNEWLINE(**linep)) {

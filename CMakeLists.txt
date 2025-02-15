@@ -32,8 +32,8 @@
 # https://cmake.org/cmake/help/latest/module/FetchContent.html#integrating-with-find-package
 #
 # The following variables are available:
-#   HAVE_SSL_SET0_WBIO: `SSL_set0_wbio` present in OpenSSL/wolfSSL
-#   HAVE_OPENSSL_SRP: `SSL_CTX_set_srp_username` present in OpenSSL/wolfSSL
+#   HAVE_SSL_SET0_WBIO: `SSL_set0_wbio` present in OpenSSL
+#   HAVE_OPENSSL_SRP: `SSL_CTX_set_srp_username` present in OpenSSL
 #   HAVE_GNUTLS_SRP: `gnutls_srp_verifier` present in GnuTLS
 #   HAVE_SSL_SET_QUIC_USE_LEGACY_CODEPOINT: `SSL_set_quic_use_legacy_codepoint` present in OpenSSL/wolfSSL
 #   HAVE_QUICHE_CONN_SET_QLOG_FD: `quiche_conn_set_qlog_fd` present in quiche
@@ -208,7 +208,11 @@ if(WIN32)
     endif()
   endif()
 
-  list(APPEND CMAKE_REQUIRED_DEFINITIONS "-DWIN32_LEAN_AND_MEAN")  # Apply to all feature checks
+  # Apply to all feature checks
+  list(APPEND CMAKE_REQUIRED_DEFINITIONS "-DWIN32_LEAN_AND_MEAN")
+  if(MSVC)
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D_CRT_NONSTDC_NO_DEPRECATE")  # for strdup() detection
+  endif()
 
   set(CURL_TARGET_WINDOWS_VERSION "" CACHE STRING "Minimum target Windows version as hex string")
   if(CURL_TARGET_WINDOWS_VERSION)
@@ -261,13 +265,9 @@ endif()
 
 option(ENABLE_DEBUG "Enable curl debug features (for developing curl itself)" OFF)
 if(ENABLE_DEBUG)
-  message(WARNING "This curl build is Debug-enabled, do not use in production.")
+  message(WARNING "This curl build is Debug-enabled and insecure, do not use in production.")
 endif()
 option(ENABLE_CURLDEBUG "Enable TrackMemory debug feature" ${ENABLE_DEBUG})
-
-if(MSVC)
-  set(ENABLE_CURLDEBUG OFF)  # FIXME: TrackMemory + MSVC fails test 558 and 1330. Tested with static build, Debug mode.
-endif()
 
 if(ENABLE_DEBUG)
   set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS "DEBUGBUILD")
@@ -483,35 +483,6 @@ if(WINDOWS_STORE)
   set(CURL_DISABLE_TELNET ON)  # telnet code needs fixing to compile for UWP.
 endif()
 
-option(ENABLE_IPV6 "Enable IPv6 support" ON)
-mark_as_advanced(ENABLE_IPV6)
-if(ENABLE_IPV6 AND NOT WIN32)
-  include(CheckStructHasMember)
-  check_struct_has_member("struct sockaddr_in6" "sin6_addr" "netinet/in.h" HAVE_SOCKADDR_IN6_SIN6_ADDR)
-  check_struct_has_member("struct sockaddr_in6" "sin6_scope_id" "netinet/in.h" HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID)
-  if(NOT HAVE_SOCKADDR_IN6_SIN6_ADDR)
-    if(NOT DOS AND NOT AMIGA)
-      message(WARNING "struct sockaddr_in6 not available, disabling IPv6 support")
-    endif()
-    # Force the feature off as this name is used as guard macro...
-    set(ENABLE_IPV6 OFF CACHE BOOL "Enable IPv6 support" FORCE)
-  endif()
-
-  if(APPLE AND NOT ENABLE_ARES)
-    set(_use_core_foundation_and_core_services ON)
-
-    find_library(SYSTEMCONFIGURATION_FRAMEWORK NAMES "SystemConfiguration")
-    mark_as_advanced(SYSTEMCONFIGURATION_FRAMEWORK)
-    if(NOT SYSTEMCONFIGURATION_FRAMEWORK)
-      message(FATAL_ERROR "SystemConfiguration framework not found")
-    endif()
-    list(APPEND CURL_LIBS "-framework SystemConfiguration")
-  endif()
-endif()
-if(ENABLE_IPV6)
-  set(USE_IPV6 ON)
-endif()
-
 find_package(Perl)
 
 if(PERL_EXECUTABLE)
@@ -568,15 +539,19 @@ include(CheckSymbolExists)
 include(CheckTypeSize)
 include(CheckCSourceCompiles)
 
-if(WIN32)
-  # Preload settings on Windows
-  include("${CMAKE_CURRENT_SOURCE_DIR}/CMake/win32-cache.cmake")
-elseif(APPLE)
-  # Fast-track predictable feature detections
-  set(HAVE_EVENTFD 0)
-  set(HAVE_GETPASS_R 0)
-  set(HAVE_SENDMMSG 0)
-elseif(AMIGA)
+option(_CURL_QUICK_DETECT "Fast-track known feature detection results (Windows, some Apple)" ON)
+if(_CURL_QUICK_DETECT)
+  if(WIN32)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/CMake/win32-cache.cmake")
+  elseif(APPLE)
+    set(HAVE_EVENTFD 0)
+    set(HAVE_GETPASS_R 0)
+    set(HAVE_WRITABLE_ARGV 1)
+    set(HAVE_SENDMMSG 0)
+  endif()
+endif()
+
+if(AMIGA)
   set(HAVE_GETADDRINFO 0)  # Breaks the build when detected and used.
 endif()
 if(DOS OR AMIGA)
@@ -621,6 +596,38 @@ elseif(NOT WIN32 AND NOT APPLE)
   if(HAVE_LIBSOCKET)
     set(CURL_LIBS "socket" ${CURL_LIBS})
   endif()
+endif()
+
+option(ENABLE_IPV6 "Enable IPv6 support" ON)
+mark_as_advanced(ENABLE_IPV6)
+if(ENABLE_IPV6)
+  include(CheckStructHasMember)
+  if(WIN32)
+    check_struct_has_member("struct sockaddr_in6" "sin6_scope_id" "winsock2.h;ws2tcpip.h" HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID)
+  else()
+    check_struct_has_member("struct sockaddr_in6" "sin6_addr" "netinet/in.h" HAVE_SOCKADDR_IN6_SIN6_ADDR)
+    check_struct_has_member("struct sockaddr_in6" "sin6_scope_id" "netinet/in.h" HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID)
+    if(NOT HAVE_SOCKADDR_IN6_SIN6_ADDR)
+      if(NOT DOS AND NOT AMIGA)
+        message(WARNING "struct sockaddr_in6 not available, disabling IPv6 support")
+      endif()
+      set(ENABLE_IPV6 OFF CACHE BOOL "Enable IPv6 support" FORCE)  # Force the feature off as we use this name as guard macro
+    endif()
+
+    if(APPLE AND NOT ENABLE_ARES)
+      set(_use_core_foundation_and_core_services ON)
+
+      find_library(SYSTEMCONFIGURATION_FRAMEWORK NAMES "SystemConfiguration")
+      mark_as_advanced(SYSTEMCONFIGURATION_FRAMEWORK)
+      if(NOT SYSTEMCONFIGURATION_FRAMEWORK)
+        message(FATAL_ERROR "SystemConfiguration framework not found")
+      endif()
+      list(APPEND CURL_LIBS "-framework SystemConfiguration")
+    endif()
+  endif()
+endif()
+if(ENABLE_IPV6)
+  set(USE_IPV6 ON)
 endif()
 
 # Check SSL libraries
@@ -838,6 +845,10 @@ if(CURL_USE_GNUTLS)
     pkg_check_modules(GNUTLS "gnutls")
     if(GNUTLS_FOUND)
       set(GNUTLS_LIBRARIES ${GNUTLS_LINK_LIBRARIES})
+      string(REPLACE ";" " " GNUTLS_CFLAGS "${GNUTLS_CFLAGS}")
+      if(GNUTLS_CFLAGS)
+        string(APPEND CMAKE_C_FLAGS " ${GNUTLS_CFLAGS}")
+      endif()
     endif()
   endif()
   if(NOT GNUTLS_FOUND)
@@ -942,6 +953,7 @@ macro(curl_openssl_check_symbol_exists _symbol _files _variable)
   cmake_push_check_state()
   if(USE_OPENSSL)
     list(APPEND CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS "-DOPENSSL_SUPPRESS_DEPRECATED")  # for SSL_CTX_set_srp_username deprecated since 3.0.0
     if(HAVE_LIBZ)
       list(APPEND CMAKE_REQUIRED_LIBRARIES ZLIB::ZLIB)
     endif()
@@ -988,7 +1000,7 @@ if(USE_WOLFSSL)
   curl_openssl_check_symbol_exists("wolfSSL_BIO_set_shutdown" "wolfssl/options.h;wolfssl/ssl.h" HAVE_WOLFSSL_FULL_BIO)
 endif()
 
-if(USE_OPENSSL OR USE_WOLFSSL)
+if(USE_OPENSSL)
   if(NOT DEFINED HAVE_SSL_SET0_WBIO)
     curl_openssl_check_symbol_exists("SSL_set0_wbio" "openssl/ssl.h" HAVE_SSL_SET0_WBIO)
   endif()
@@ -1728,15 +1740,15 @@ check_function_exists("eventfd"       HAVE_EVENTFD)
 check_symbol_exists("ftruncate"       "unistd.h" HAVE_FTRUNCATE)
 check_symbol_exists("getpeername"     "${CURL_INCLUDES}" HAVE_GETPEERNAME)  # winsock2.h unistd.h proto/bsdsocket.h
 check_symbol_exists("getsockname"     "${CURL_INCLUDES}" HAVE_GETSOCKNAME)  # winsock2.h unistd.h proto/bsdsocket.h
-check_function_exists("if_nametoindex"  HAVE_IF_NAMETOINDEX)  # winsock2.h net/if.h
 check_function_exists("getrlimit"       HAVE_GETRLIMIT)
 check_function_exists("setlocale"       HAVE_SETLOCALE)
 check_function_exists("setmode"         HAVE_SETMODE)
 check_function_exists("setrlimit"       HAVE_SETRLIMIT)
 
 if(NOT WIN32)
-  check_function_exists("realpath"      HAVE_REALPATH)
-  check_function_exists("sched_yield"   HAVE_SCHED_YIELD)
+  check_function_exists("if_nametoindex"  HAVE_IF_NAMETOINDEX)  # iphlpapi.h (Windows non-UWP), net/if.h
+  check_function_exists("realpath"        HAVE_REALPATH)
+  check_function_exists("sched_yield"     HAVE_SCHED_YIELD)
   check_symbol_exists("strcasecmp"      "string.h" HAVE_STRCASECMP)
   check_symbol_exists("stricmp"         "string.h" HAVE_STRICMP)
   check_symbol_exists("strcmpi"         "string.h" HAVE_STRCMPI)
@@ -1754,9 +1766,10 @@ if(NOT _ssl_enabled)
   check_symbol_exists("arc4random" "${CURL_INCLUDES};stdlib.h" HAVE_ARC4RANDOM)
 endif()
 
-if(NOT MSVC OR (MSVC_VERSION GREATER_EQUAL 1900))
-  # Earlier MSVC compilers had faulty snprintf implementations
-  check_function_exists("snprintf" HAVE_SNPRINTF)
+if(NOT MSVC)
+  check_function_exists("snprintf" HAVE_SNPRINTF)  # to match detection method in ./configure
+elseif(MSVC_VERSION GREATER_EQUAL 1900)  # Earlier MSVC compilers had faulty snprintf implementations
+  check_symbol_exists("snprintf" "stdio.h" HAVE_SNPRINTF)  # snprintf may be a compatibility macro, not an exported function
 endif()
 if(APPLE)
   check_function_exists("mach_absolute_time" HAVE_MACH_ABSOLUTE_TIME)
@@ -1798,7 +1811,6 @@ foreach(_curl_test IN ITEMS
     HAVE_GETHOSTBYNAME_R_3_REENTRANT
     HAVE_GETHOSTBYNAME_R_5_REENTRANT
     HAVE_GETHOSTBYNAME_R_6_REENTRANT
-    HAVE_IN_ADDR_T
     HAVE_BOOL_T
     STDC_HEADERS
     HAVE_FILE_OFFSET_BITS
@@ -1893,10 +1905,6 @@ if(APPLE)
 endif()
 
 # Some other minor tests
-
-if(NOT HAVE_IN_ADDR_T)
-  set(in_addr_t "unsigned long")
-endif()
 
 if(CMAKE_COMPILER_IS_GNUCC AND APPLE)
   include(CheckCCompilerFlag)
@@ -2192,7 +2200,6 @@ if(NOT CURL_DISABLE_INSTALL)
 
   # curl-config needs the following options to be set.
   set(CC                      "${CMAKE_C_COMPILER}")
-  # TODO: probably put a -D... options here?
   set(CONFIGURE_OPTIONS       "")
   set(CURLVERSION             "${_curl_version}")
   set(VERSIONNUM              "${_curl_version_num}")
@@ -2236,7 +2243,7 @@ if(NOT CURL_DISABLE_INSTALL)
   endforeach()
 
   # Avoid getting unnecessary -L options for known system directories.
-  set(_sys_libdirs "")
+  set(_sys_libdirs "${CMAKE_C_IMPLICIT_LINK_DIRECTORIES}")
   foreach(_libdir IN LISTS CMAKE_SYSTEM_PREFIX_PATH)
     if(_libdir MATCHES "/$")
       string(APPEND _libdir "lib")
@@ -2266,7 +2273,7 @@ if(NOT CURL_DISABLE_INSTALL)
 
   set(_implicit_libs "")
   if(NOT MINGW AND NOT UNIX)
-    set(_implicit_libs ${CMAKE_C_IMPLICIT_LINK_LIBRARIES})
+    set(_implicit_libs "${CMAKE_C_IMPLICIT_LINK_LIBRARIES}")
   endif()
 
   foreach(_lib IN LISTS _implicit_libs _custom_libs CURL_LIBS)

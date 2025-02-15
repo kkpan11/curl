@@ -591,13 +591,16 @@ dnl **********************************************************************
 CURL_CHECK_WIN32_LARGEFILE
 CURL_CHECK_WIN32_CRYPTO
 
+curl_cv_apple='no'
+case $host in
+  *-apple-*) curl_cv_apple='yes';;
+esac
+
 CURL_DARWIN_CFLAGS
 
-case $host in
-  *-apple-*)
-    CURL_SUPPORTS_BUILTIN_AVAILABLE
-    ;;
-esac
+if test "$curl_cv_apple" = 'yes'; then
+  CURL_SUPPORTS_BUILTIN_AVAILABLE
+fi
 
 curl_cv_cygwin='no'
 case $host_os in
@@ -1788,6 +1791,9 @@ int main(int argc, char **argv)
 ],[
   curl_cv_writable_argv=cross
 ])
+if test "$curl_cv_writable_argv" = 'cross' -a "$curl_cv_apple" = 'yes'; then
+  curl_cv_writable_argv=yes
+fi
 case $curl_cv_writable_argv in
   yes)
     AC_DEFINE(HAVE_WRITABLE_ARGV, 1, [Define this symbol if your OS supports changing the contents of argv])
@@ -4005,8 +4011,6 @@ case $host_os in
     ;;
 esac
 
-TYPE_IN_ADDR_T
-
 TYPE_SOCKADDR_STORAGE
 
 CURL_CHECK_FUNC_SELECT
@@ -4065,7 +4069,6 @@ AC_CHECK_FUNCS([\
   getpwuid_r \
   getrlimit \
   gettimeofday \
-  if_nametoindex \
   mach_absolute_time \
   pipe \
   poll \
@@ -4081,8 +4084,9 @@ AC_CHECK_FUNCS([\
 
 if test "$curl_cv_native_windows" != 'yes'; then
   AC_CHECK_FUNCS([\
-  sched_yield \
-  realpath \
+    if_nametoindex \
+    realpath \
+    sched_yield \
   ])
   CURL_CHECK_FUNC_STRCASECMP
   CURL_CHECK_FUNC_STRCMPI
