@@ -43,7 +43,7 @@
 #include "strcase.h"
 #include "share.h"
 #include "vtls/vtls.h"
-#include "warnless.h"
+#include "curlx/warnless.h"
 #include "sendf.h"
 #include "http2.h"
 #include "setopt.h"
@@ -2393,6 +2393,15 @@ static CURLcode setopt_cptr(struct Curl_easy *data, CURLoption option,
      */
     return Curl_setstropt(&data->set.str[STRING_SSL_EC_CURVES], ptr);
 
+  case CURLOPT_SSL_SIGNATURE_ALGORITHMS:
+    /*
+     * Set accepted signature algorithms.
+     * Specify colon-delimited list of signature scheme names.
+     */
+    if(Curl_ssl_supports(data, SSLSUPP_SIGNATURE_ALGORITHMS))
+      return Curl_setstropt(&data->set.str[STRING_SSL_SIGNATURE_ALGORITHMS],
+                            ptr);
+    return CURLE_NOT_BUILT_IN;
 #endif
 #ifdef USE_SSH
   case CURLOPT_SSH_PUBLIC_KEYFILE:
@@ -3061,9 +3070,7 @@ CURLcode curl_easy_setopt(CURL *d, CURLoption tag, ...)
   result = Curl_vsetopt(data, tag, arg);
 
   va_end(arg);
-#ifdef DEBUGBUILD
   if(result == CURLE_BAD_FUNCTION_ARGUMENT)
-    infof(data, "setopt arg 0x%x returned CURLE_BAD_FUNCTION_ARGUMENT", tag);
-#endif
+    failf(data, "setopt 0x%x got bad argument", tag);
   return result;
 }
