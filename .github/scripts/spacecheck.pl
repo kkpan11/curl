@@ -47,6 +47,21 @@ my @space_at_eol = (
     "^tests/data/test",
 );
 
+my @non_ascii_allowed = (
+    '\xC3\xB6',  # UTF-8 for https://codepoints.net/U+00F6 LATIN SMALL LETTER O WITH DIAERESIS
+);
+
+my $non_ascii_allowed = join(', ', @non_ascii_allowed);
+
+my @non_ascii = (
+    ".github/scripts/spellcheck.words",
+    ".mailmap",
+    "RELEASE-NOTES",
+    "docs/BINDINGS.md",
+    "docs/THANKS",
+    "docs/THANKS-filter",
+);
+
 sub fn_match {
     my ($filename, @masklist) = @_;
 
@@ -65,19 +80,19 @@ sub eol_detect {
     my $lf = () = $content =~ /\n/g;
 
     if($cr > 0 && $lf == 0) {
-        return "cr"
+        return "cr";
     }
     elsif($cr == 0 && $lf > 0) {
-        return "lf"
+        return "lf";
     }
     elsif($cr == 0 && $lf == 0) {
-        return "bin"
+        return "bin";
     }
     elsif($cr == $lf) {
-        return "crlf"
+        return "crlf";
     }
 
-    return ""
+    return "";
 }
 
 my $issues = 0;
@@ -132,6 +147,21 @@ while(my $filename = <$git_ls_files>) {
 
     if($content =~ /([\x00-\x08\x0b\x0c\x0e-\x1f\x7f])/) {
         push @err, "content: has binary contents";
+    }
+
+    if($filename !~ /tests\/data/) {
+        # the tests have no allowed UTF bytes
+        $content =~ s/[$non_ascii_allowed]//g;
+    }
+
+    if(!fn_match($filename, @non_ascii) &&
+       ($content =~ /([\x80-\xff]+)/)) {
+        my $non = $1;
+        my $hex;
+        for my $e (split(//, $non)) {
+            $hex .= sprintf("%s%02x", $hex ? " ": "", ord($e));
+        }
+        push @err, "content: has non-ASCII: '$non' ($hex)";
     }
 
     if(@err) {

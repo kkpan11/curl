@@ -1,5 +1,5 @@
-#ifndef HEADER_CURL_INET_PTON_H
-#define HEADER_CURL_INET_PTON_H
+#ifndef HEADER_CURL_CONFIG2SETOPTS_H
+#define HEADER_CURL_CONFIG2SETOPTS_H
 /***************************************************************************
  *                                  _   _ ____  _
  *  Project                     ___| | | |  _ \| |
@@ -24,25 +24,10 @@
  *
  ***************************************************************************/
 
-#include "curl_setup.h"
+CURLcode config2setopts(struct GlobalConfig *global,
+                        struct OperationConfig *config,
+                        struct per_transfer *per,
+                        CURL *curl,
+                        CURLSH *share);
 
-int curlx_inet_pton(int, const char *, void *);
-
-#ifdef HAVE_INET_PTON
-#ifdef HAVE_NETINET_IN_H
-#include <netinet/in.h>
-#endif
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
-#ifdef HAVE_ARPA_INET_H
-#include <arpa/inet.h>
-#endif
-#ifdef __AMIGA__
-#define curlx_inet_pton(x,y,z) inet_pton(x,(unsigned char *)CURL_UNCONST(y),z)
-#else
-#define curlx_inet_pton(x,y,z) inet_pton(x,y,z)
-#endif
-#endif
-
-#endif /* HEADER_CURL_INET_PTON_H */
+#endif /* HEADER_CURL_CONFIG2SETOPTS_H */
